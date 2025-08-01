@@ -62,6 +62,9 @@ class NPCOperon:
                     print(message)
                     break
 
-    def draw(self, screen):
-        """Draws all NPCs."""
-        self.npcs.draw(screen)
+    def draw(self, screen, camera_x=0):
+        """Draws all NPCs, adjusted for camera."""
+        for npc in self.npcs:
+            adjusted_rect = npc.rect.copy()
+            adjusted_rect.x -= camera_x
+            screen.blit(npc.image, adjusted_rect)

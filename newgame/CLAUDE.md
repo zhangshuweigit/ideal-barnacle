@@ -1,3 +1,20 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## ⚙️ Common Commands
+
+- **Install dependencies**:
+  ```bash
+  pip install pygame
+  ```
+- **Run the game**:
+  ```bash
+  python main.py
+  ```
+
+---
+
 ## 🧬 细菌代码原则 (Bacterial Code Principles)
 
 基于细菌基因组的编程哲学：**小巧、模块化、独立自足**
@@ -45,7 +62,7 @@ game_project/
 └── maps/                   # 地图文件夹 - Tiled地图文件
     ├── starter_village.tmx # 新手村地图
     ├── dungeon_01.tmx      # 地牢关卡1
-    ├── dungeon_02.tmx      # 地牢关卡2
+    ├── dungeon_02.tmx      # 地牢关-卡2
     └── boss_arena.tmx      # Boss战斗场地
 ```
 

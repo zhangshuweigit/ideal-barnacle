@@ -10,17 +10,20 @@ class UIOperon:
         self.health_bar_height = 5
         self.health_bar_y_offset = 10
 
-    def draw_health_bars(self, screen, entities, combat_operon):
+    def draw_health_bars(self, screen, entities, combat_operon, camera_x=0):
         """
-        为所有注册在战斗系统中的实体绘制生命条。
+        为所有注册在战斗系统中的实体绘制生命条，并根据摄像头位置调整。
         """
         for entity in entities:
             if entity in combat_operon.health_systems:
                 health_system = combat_operon.health_systems[entity]
                 
+                # Adjust position based on camera_x
+                adjusted_x = entity.rect.left - camera_x
+                
                 # Health bar background (red)
                 bg_rect = pygame.Rect(
-                    entity.rect.left,
+                    adjusted_x,
                     entity.rect.top - self.health_bar_y_offset,
                     entity.rect.width,
                     self.health_bar_height
@@ -31,7 +34,7 @@ class UIOperon:
                 health_percentage = health_system.current_hp / health_system.max_hp
                 current_health_width = entity.rect.width * health_percentage
                 fg_rect = pygame.Rect(
-                    entity.rect.left,
+                    adjusted_x,
                     entity.rect.top - self.health_bar_y_offset,
                     current_health_width,
                     self.health_bar_height

@@ -32,9 +32,17 @@ class Enemy(pygame.sprite.Sprite):
     def _update_hitbox(self, player):
         pass
 
-    def draw_attack(self, screen):
+    def draw(self, screen, camera_x=0):
+        # Adjust drawing position based on camera
+        adjusted_rect = self.rect.copy()
+        adjusted_rect.x -= camera_x
+        screen.blit(self.image, adjusted_rect)
+
+    def draw_attack(self, screen, camera_x=0):
         if self.is_attacking and self.attack_hitbox:
-            pygame.draw.rect(screen, (255, 0, 0, 150), self.attack_hitbox)
+            adjusted_hitbox = self.attack_hitbox.copy()
+            adjusted_hitbox.x -= camera_x
+            pygame.draw.rect(screen, (255, 0, 0, 150), adjusted_hitbox)
 
 class MeleeEnemy(Enemy):
     """Enemy that moves towards the player to attack."""
@@ -58,7 +66,7 @@ class MeleeEnemy(Enemy):
             self.last_attack_time = pygame.time.get_ticks()
             self.is_attacking = True
             self.attack_timer = pygame.time.get_ticks()
-            direction = 1 if player.rect.centerx > self.rect.centerx else -1
+            direction = pygame.Vector2(player.rect.centerx - self.rect.centerx, player.rect.centery - self.rect.centery).normalize()
             return {'type': 'melee', 'damage': self.damage, 'range': self.attack_range, 'direction': direction}
         return None
 
@@ -87,7 +95,12 @@ class RangedEnemy(Enemy):
     def perform_attack(self, player):
         if self.can_attack() and not self.is_attacking:
             self.last_attack_time = pygame.time.get_ticks()
-            direction = 1 if player.rect.centerx > self.rect.centerx else -1
+            
+            # Calculate the precise direction vector towards the player
+            player_pos = pygame.Vector2(player.rect.center)
+            enemy_pos = pygame.Vector2(self.rect.center)
+            direction = (player_pos - enemy_pos).normalize() if (player_pos - enemy_pos).length() > 0 else pygame.Vector2(1, 0)
+
             return {'type': 'projectile', 'damage': self.damage, 'speed': 8, 'direction': direction}
         return None
 
@@ -131,10 +144,10 @@ class EnemyOperon:
                 attack_list.append(attack_data)
         return attack_list
 
-    def draw(self, screen):
-        self.enemies.draw(screen)
+    def draw(self, screen, camera_x=0):
         for enemy in self.enemies:
-            enemy.draw_attack(screen)
+            enemy.draw(screen, camera_x)
+            enemy.draw_attack(screen, camera_x)
 
     def get_all_enemies(self):
         return list(self.enemies)
