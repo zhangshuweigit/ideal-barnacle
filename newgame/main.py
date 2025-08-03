@@ -50,16 +50,23 @@ class Game:
         # Register player
         self.combat_operon.register_entity(self.movement_operon.player, 100)
         
-        # This default layout is only used if custom_map.json doesn't exist.
-        # We must apply the offset here too so it appears in the correct place.
-        if not self.map_operon.spawn_points: # A simple check to see if a map was loaded
-            level_1_layout = {
+        # --- Level Generation ---
+        # If spawn points were loaded from the map file, use them. Otherwise, use a default layout.
+        if self.map_operon.spawn_points:
+            # The generation operon expects a layout dictionary with an 'enemies' key.
+            # The spawn_points from map_operon are already in the correct format.
+            level_layout = {'enemies': self.map_operon.spawn_points}
+            self.generation_operon.generate_level(level_layout)
+        else:
+            # Fallback to a default layout if no spawn points are defined in the map
+            print("No spawn points found in map, using default layout.")
+            default_layout = {
                 'enemies': [
                     {'type': 'melee', 'pos': (600, 625)},
                     {'type': 'ranged', 'pos': (800, 625)},
                 ]
             }
-            self.generation_operon.generate_level(level_1_layout)
+            self.generation_operon.generate_level(default_layout)
 
     def run(self):
         """The main game loop."""
