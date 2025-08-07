@@ -17061,7 +17061,7 @@
             0,
             0,
             0,
-            2,
+            0,
             0,
             0,
             0,
@@ -19065,7 +19065,7 @@
             0,
             0,
             0,
-            2,
+            0,
             0,
             0,
             0,
@@ -22061,12 +22061,135 @@
             ]
         }
     ],
-    "weapon_spawn_points": [
+    "weapon_spawn_points": [],
+    "interact_points": [
         {
-            "type": "weapon",
+            "type": "door",
             "pos": [
-                1571.0,
-                278
+                848,
+                592
+            ],
+            "is_open": false,
+            "is_broken": false,
+            "is_collected": false,
+            "is_group": true,
+            "group_positions": [
+                [
+                    26,
+                    17
+                ],
+                [
+                    26,
+                    18
+                ],
+                [
+                    26,
+                    19
+                ]
+            ]
+        },
+        {
+            "type": "chest",
+            "pos": [
+                1552,
+                272
+            ],
+            "is_open": null,
+            "is_broken": false,
+            "is_collected": true,
+            "is_group": true,
+            "group_positions": [
+                [
+                    48,
+                    8
+                ],
+                [
+                    49,
+                    8
+                ],
+                [
+                    48,
+                    9
+                ],
+                [
+                    49,
+                    9
+                ]
+            ],
+            "collection_time": 78482
+        },
+        {
+            "type": "chest",
+            "pos": [
+                1552,
+                272
+            ],
+            "is_open": null,
+            "is_broken": false,
+            "is_collected": false,
+            "is_group": true,
+            "group_positions": [
+                [
+                    48,
+                    8
+                ],
+                [
+                    49,
+                    8
+                ],
+                [
+                    48,
+                    9
+                ],
+                [
+                    49,
+                    9
+                ]
+            ]
+        },
+        {
+            "type": "scroll",
+            "pos": [
+                2160,
+                560
+            ],
+            "is_open": null,
+            "is_broken": false,
+            "is_collected": false,
+            "is_group": true,
+            "group_positions": [
+                [
+                    67,
+                    16
+                ],
+                [
+                    68,
+                    16
+                ],
+                [
+                    67,
+                    17
+                ],
+                [
+                    68,
+                    17
+                ],
+                [
+                    67,
+                    18
+                ],
+                [
+                    68,
+                    18
+                ],
+                [
+                    67,
+                    19
+                ],
+                [
+                    68,
+                    19
+                ]
             ]
         }
     ]

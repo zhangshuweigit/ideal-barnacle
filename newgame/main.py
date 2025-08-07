@@ -7,7 +7,7 @@ from code.enemy_operon import EnemyOperon
 from code.generation_operon import GenerationOperon
 from code.npc_operon import NPCOperon
 from code.ui_operon import UIOperon
-from code.map_operon import MapOperon, COLLISION, NPC, EMPTY, SPAWN_MELEE, SPAWN_RANGED, SPAWN_WEAPON
+from code.map_operon import MapOperon, COLLISION, NPC, EMPTY, SPAWN_MELEE, SPAWN_RANGED, SPAWN_WEAPON, INTERACT_DOOR, INTERACT_SCROLL, INTERACT_CHEST
 
 # --- Constants ---
 SCREEN_WIDTH = 1280
@@ -143,6 +143,14 @@ class Game:
                 elif actions.get('remove_spawn_point'):
                     self.map_operon.remove_spawn_point_at(world_pos)
 
+                # --- Interact Point Editing ---
+                if actions.get('add_door_interact'):
+                    self.map_operon.add_interact_point(world_pos, INTERACT_DOOR)
+                elif actions.get('add_scroll_interact'):
+                    self.map_operon.add_interact_point(world_pos, INTERACT_SCROLL)
+                elif actions.get('add_chest_interact'):
+                    self.map_operon.add_interact_point(world_pos, INTERACT_CHEST)
+
         # --- Save map action ---
         if actions.get('save_map'):
             self.map_operon.save_to_file('custom_map.json')
@@ -160,13 +168,48 @@ class Game:
         enemy_attacks = self.enemy_operon.update(self.movement_operon.player)
         self.npc_operon.update(self.movement_operon.player, actions)
         
+        # Handle player interactions (chest/scroll collection)
+        if self.movement_operon.player.last_interaction:
+            interaction = self.movement_operon.player.last_interaction
+            
+            if interaction['type'] == 'chest':
+                # Handle chest reward - based on actual chest size (4 tiles)
+                reward_info = self.weapon_operon.handle_chest_reward(interaction)
+                print(f"Player received {reward_info['new_weapon']} from ancient chest!")
+                
+                # Add chest notification
+                chest_notification = {
+                    'text': f"Ancient Weapon: {reward_info['new_weapon']}!",
+                    'start_time': pygame.time.get_ticks(),
+                    'duration': 4000,
+                    'color': (255, 215, 0)  # Gold color
+                }
+                self.movement_operon.player.notifications.append(chest_notification)
+                
+            elif interaction['type'] == 'scroll':
+                # Handle scroll permanent upgrade - fixed 10%
+                import random
+                upgrade_types = ['speed', 'damage', 'jump']
+                upgrade_type = random.choice(upgrade_types)
+                
+                # Fixed upgrade value
+                value = 0.10  # Always 10%
+                
+                self.movement_operon.player.add_permanent_upgrade(upgrade_type, value)
+                print(f"Player received permanent {upgrade_type} upgrade: +{value:.2f} (from ancient scroll)")
+                
+            # No duplicate chest handling needed
+            
+            # Clear the interaction after processing
+            self.movement_operon.player.last_interaction = None
+        
         all_entities = [self.movement_operon.player] + self.enemy_operon.get_all_enemies()
         if player_attack:
-            self.combat_operon.process_attack(player_attack, all_entities, self.movement_operon.player)
+            self.combat_operon.process_attack(player_attack, all_entities, self.movement_operon.player, self.map_operon)
         for attack in enemy_attacks:
-            self.combat_operon.process_attack(attack, all_entities, attack.pop('attacker'))
+            self.combat_operon.process_attack(attack, all_entities, attack.pop('attacker'), self.map_operon)
             
-        self.combat_operon.update(all_entities, self.camera_x)
+        self.combat_operon.update(all_entities, self.camera_x, self.map_operon)
         # We still call weapon_operon.update for its internal state machine (e.g., melee timer)
         self.weapon_operon.update(self.movement_operon.player.rect, actions.get('mouse_pos'))
 
@@ -188,6 +231,9 @@ class Game:
         # Draw UI on top, which is not affected by the camera
         all_entities = [self.movement_operon.player] + self.enemy_operon.get_all_enemies()
         self.ui_operon.draw_health_bars(self.screen, all_entities, self.combat_operon, self.camera_x)
+        self.ui_operon.draw_upgrades(self.screen, self.movement_operon.player)
+        self.ui_operon.draw_notifications(self.screen, self.movement_operon.player)
+        self.ui_operon.draw_skill_info(self.screen, self.weapon_operon)
         
         pygame.display.flip()
 

@@ -32,6 +32,7 @@ class Bomb(Weapon):
     """副武器：炸弹。"""
     def __init__(self):
         super().__init__("Bomb", 25)
+        self.skill_cooldown = 30000  # 30 seconds in milliseconds
 
     def normal_attack(self):
         return {'type': 'effect', 'effect_type': 'explosion', 'radius': 100, 'duration': 250, 'damage': self.damage, 'color': (255, 120, 0)}
@@ -40,9 +41,41 @@ class HealPotion(Weapon):
     """副武器：治疗药水。"""
     def __init__(self):
         super().__init__("Heal Potion", 0)
+        self.max_uses = 3  # Maximum 3 uses
+        self.uses_remaining = self.max_uses
 
     def normal_attack(self):
-        return {'type': 'effect', 'effect_type': 'heal', 'amount': 20}
+        if self.uses_remaining > 0:
+            self.uses_remaining -= 1
+            return {'type': 'effect', 'effect_type': 'full_heal'}
+        else:
+            return None  # No uses remaining
+
+    def refill_uses(self):
+        """Refill the potion uses (for debugging or future items)."""
+        self.uses_remaining = self.max_uses
+
+class FireSword(Weapon):
+    """稀有武器：火焰剑。"""
+    def __init__(self):
+        super().__init__("Fire Sword", 25)
+
+    def normal_attack(self):
+        return {'type': 'melee', 'damage': self.damage, 'range': 80, 'duration': 300, 'color': (255, 100, 0)}
+
+    def skill_attack(self):
+        return {'type': 'effect', 'effect_type': 'explosion', 'radius': 80, 'duration': 400, 'damage': self.damage * 2, 'color': (255, 50, 0)}
+
+class IceBow(Weapon):
+    """稀有武器：冰霜弓。"""
+    def __init__(self):
+        super().__init__("Ice Bow", 15)
+
+    def normal_attack(self):
+        return {'type': 'projectile', 'damage': self.damage, 'speed': 12, 'freeze': True}
+
+    def skill_attack(self):
+        return {'type': 'effect', 'effect_type': 'freeze_area', 'radius': 100, 'duration': 500, 'damage': self.damage, 'color': (100, 200, 255)}
 
 class WeaponOperon:
     """
@@ -61,8 +94,14 @@ class WeaponOperon:
         self.attack_duration = 0
         self.attack_hitbox = None
         
-        # 核心：此类自己维护和“记忆”瞄准方向，1为右，-1为左。
-        self.aiming_direction = 1 
+        # 核心：此类自己维护和"记忆"瞄准方向，1为右，-1为左。
+        self.aiming_direction = 1
+        
+        # 技能冷却时间管理
+        self.skill_cooldowns = {
+            'sub_1': 0,  # Bomb cooldown end time
+            'sub_2': 0   # HealPotion cooldown end time
+        } 
 
     def attack(self, actions):
         """
@@ -99,10 +138,20 @@ class WeaponOperon:
         
         direction_vector = pygame.Vector2(self.aiming_direction, 0)
 
+        # --- 技能冷却检查 (只对技能攻击) ---
+        current_time = pygame.time.get_ticks()
+        if is_skill and slot in self.skill_cooldowns and current_time < self.skill_cooldowns[slot]:
+            # Skill is on cooldown
+            return None
+            
         # --- 生成攻击数据 ---
         attack_data = weapon.skill_attack() if is_skill else weapon.normal_attack()
         if not attack_data:
             return None
+            
+        # --- 设置技能冷却 ---
+        if slot in self.skill_cooldowns and hasattr(weapon, 'skill_cooldown'):
+            self.skill_cooldowns[slot] = current_time + weapon.skill_cooldown
             
         attack_data['direction'] = direction_vector
         
@@ -115,6 +164,15 @@ class WeaponOperon:
             # 近战攻击的方向也使用计算好的瞄准方向
             self.attack_direction = direction_vector
             self.attack_timer = pygame.time.get_ticks()
+            
+            # 直接创建攻击hitbox
+            hitbox_start_x = player_rect.centerx if self.aiming_direction > 0 else player_rect.centerx - self.attack_range
+            self.attack_hitbox = pygame.Rect(
+                hitbox_start_x, 
+                player_rect.centery - 20,  # Center vertically on player
+                self.attack_range, 
+                40
+            )
         
         return attack_data
 
@@ -135,3 +193,36 @@ class WeaponOperon:
             adjusted_hitbox = self.attack_hitbox.copy()
             adjusted_hitbox.x -= camera_x
             pygame.draw.rect(screen, self.attack_color, adjusted_hitbox)
+
+    def update(self, player_rect, mouse_pos):
+        """Update weapon state (currently just for attack timing)."""
+        # Update attack state
+        if self.is_attacking:
+            if pygame.time.get_ticks() - self.attack_timer > self.attack_duration:
+                self.is_attacking = False
+                self.attack_hitbox = None
+
+    def handle_chest_reward(self, chest_info):
+        """处理宝箱奖励，随机给予玩家新武器。"""
+        rare_weapons = [FireSword(), IceBow()]
+        
+        # Randomly select a rare weapon
+        new_weapon = rare_weapons[pygame.time.get_ticks() % len(rare_weapons)]
+        
+        # Replace a random weapon slot
+        slot_keys = list(self.slots.keys())
+        random_slot = slot_keys[pygame.time.get_ticks() % len(slot_keys)]
+        
+        old_weapon = self.slots[random_slot]
+        self.slots[random_slot] = new_weapon
+        
+        print(f"Chest reward: Replaced {old_weapon.name if old_weapon else 'empty'} with {new_weapon.name} in {random_slot}")
+        
+        # Add chest notification to player (will be handled by main.py)
+        return {
+            'slot': random_slot,
+            'old_weapon': old_weapon.name if old_weapon else None,
+            'new_weapon': new_weapon.name,
+            'notification_text': f"New Weapon: {new_weapon.name}!",
+            'notification_color': (255, 215, 0)  # Gold color
+        }

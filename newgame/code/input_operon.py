@@ -40,6 +40,7 @@ class InputOperon:
             'move_dir': 0, 'jump': False, 'interact': False, 'roll': False, 'save_map': False,
             'add_melee_spawn': False, 'add_ranged_spawn': False, 'remove_spawn_point': False,
             'add_weapon_spawn': False,
+            'add_door_interact': False, 'add_scroll_interact': False, 'add_chest_interact': False,
             'active_slot': None, 'is_skill': False,
             'mouse_pos': pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
         }
@@ -64,6 +65,17 @@ class InputOperon:
                 return
             if is_shift and is_alt: # Using a more general check for Shift+Alt
                 actions['add_ranged_spawn'] = True
+                return
+
+            # --- Editor Shortcuts for Interact Points ---
+            if is_shift and event.key == pygame.K_d: # SHIFT + D for Door
+                actions['add_door_interact'] = True
+                return
+            if is_shift and event.key == pygame.K_q: # SHIFT + Q for Scroll
+                actions['add_scroll_interact'] = True
+                return
+            if is_shift and event.key == pygame.K_c: # SHIFT + C for Chest
+                actions['add_chest_interact'] = True
                 return
 
             # --- Gameplay Actions ---

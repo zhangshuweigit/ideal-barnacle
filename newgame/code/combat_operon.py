@@ -72,7 +72,7 @@ class CombatOperon:
         if entity not in self.health_systems:
             self.health_systems[entity] = HealthSystem(max_hp)
 
-    def process_attack(self, attack_data, all_entities, attacker):
+    def process_attack(self, attack_data, all_entities, attacker, map_operon=None):
         if not attack_data:
             return
 
@@ -96,9 +96,14 @@ class CombatOperon:
             hitbox_surface = pygame.Surface(hitbox_size, pygame.SRCALPHA)
             hitbox_rect = hitbox_surface.get_rect(center=hitbox_start_pos + direction_vector * (hitbox_range / 2))
             
+            # Check door damage
+            if map_operon:
+                map_operon.damage_door_at_rect(hitbox_rect, attack_data['damage'])
+            
+            # Check entity damage
             for entity in all_entities:
                 if entity is not attacker and hitbox_rect.colliderect(entity.rect):
-                    self.apply_damage(entity, attack_data['damage'])
+                    self.apply_damage(entity, attack_data['damage'], attacker)
         
         elif attack_type == 'projectile':
             px, py = attacker.rect.center
@@ -112,13 +117,26 @@ class CombatOperon:
                 pos = attacker.rect.center
                 explosion = TimedEffect(pos[0], pos[1], attack_data['radius'] * 2, attack_data['duration'], attack_data['color'])
                 self.effects.add(explosion)
+                
+                # Check door damage from explosions
+                if map_operon:
+                    map_operon.damage_door_at_rect(explosion.rect, attack_data['damage'])
+                
+                # Check entity damage
                 for entity in all_entities:
                     if entity is not attacker and explosion.rect.colliderect(entity.rect):
-                        self.apply_damage(entity, attack_data['damage'])
+                        self.apply_damage(entity, attack_data['damage'], attacker)
             elif effect_type == 'heal':
                 self.apply_heal(attacker, attack_data['amount'])
+            elif effect_type == 'full_heal':
+                # Apply full heal
+                if attacker in self.health_systems:
+                    health = self.health_systems[attacker]
+                    heal_amount = health.max_hp - health.current_hp
+                    self.apply_heal(attacker, heal_amount)
+                    print(f"Full heal applied: {heal_amount} HP restored")
 
-    def update(self, all_entities, camera_x=0):
+    def update(self, all_entities, camera_x=0, map_operon=None):
         self.projectiles.update()
         self.effects.update()
         
@@ -133,9 +151,13 @@ class CombatOperon:
                 proj.kill()
                 continue
             
+            # Check door damage from projectiles
+            if map_operon:
+                map_operon.damage_door_at_rect(proj.rect, proj.damage)
+            
             for entity in all_entities:
                 if entity is not proj.owner and proj.rect.colliderect(entity.rect):
-                    self.apply_damage(entity, proj.damage)
+                    self.apply_damage(entity, proj.damage, proj.owner)
                     proj.kill()
                     break
 
@@ -150,14 +172,22 @@ class CombatOperon:
             adjusted_rect.x -= camera_x
             screen.blit(effect.image, adjusted_rect)
 
-    def apply_damage(self, target_entity, damage):
+    def apply_damage(self, target_entity, damage, attacker_entity=None):
         # Check for invincibility frames before applying damage
         if getattr(target_entity, 'is_invincible', False):
             return
 
+        # Apply damage multiplier if attacker has damage buffs
+        final_damage = damage
+        if attacker_entity and hasattr(attacker_entity, 'get_damage_multiplier'):
+            damage_multiplier = attacker_entity.get_damage_multiplier()
+            final_damage = int(damage * damage_multiplier)
+            if final_damage != damage:
+                print(f"Damage buff applied: {damage} -> {final_damage} (x{damage_multiplier:.1f})")
+
         if target_entity in self.health_systems:
             health = self.health_systems[target_entity]
-            health.take_damage(damage)
+            health.take_damage(final_damage)
             if health.is_dead():
                 if hasattr(target_entity, 'kill'): target_entity.kill()
                 self.health_systems.pop(target_entity, None)
