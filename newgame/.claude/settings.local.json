@@ -22,7 +22,9 @@
       "Bash(pip3 install ruff mypy pygame)",
       "Bash(mypy .)",
       "Bash(rm:*)",
-      "Bash(pip install ruff)"
+      "Bash(pip install ruff)",
+      "Bash(dir:*)",
+      "Bash(pip install:*)"
     ],
     "deny": []
   }

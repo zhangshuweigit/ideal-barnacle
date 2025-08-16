@@ -158,11 +158,12 @@ class Player:
 
 class MovementOperon:
     """Manages player movement, now including rolling and map collision."""
-    def __init__(self, screen_width, screen_height, map_operon=None):
+    def __init__(self, screen_width, screen_height, map_operon=None, interact_point_operon=None):
         # The player's starting position is now fixed, relative to the centered map content
         initial_x = 100
         self.player = Player(initial_x, 500)
         self.map_operon = map_operon
+        self.interact_point_operon = interact_point_operon
         self.platforms = [pygame.Rect(0, screen_height - 40, screen_width, 40)] # Legacy platform
 
     def update(self, actions):
@@ -182,14 +183,15 @@ class MovementOperon:
             player_world_pos = (self.player.rect.centerx, self.player.rect.centery)
             
             # Try to interact with chest/scroll first
-            interact_result = self.map_operon.interact_with_chest_or_scroll_at_position(player_world_pos)
-            if interact_result:
-                # Store the interaction result for processing by other systems
-                self.player.last_interaction = interact_result
-                print(f"Player collected {interact_result['type']}")
-            else:
-                # Try to interact with doors
-                self.map_operon.toggle_door_at_position(player_world_pos)
+            if self.interact_point_operon:
+                interact_result = self.interact_point_operon.interact_with_chest_or_scroll_at_position(player_world_pos)
+                if interact_result:
+                    # Store the interaction result for processing by other systems
+                    self.player.last_interaction = interact_result
+                    print(f"Player collected {interact_result['type']}")
+                else:
+                    # Try to interact with doors
+                    self.interact_point_operon.toggle_door_at_position(player_world_pos)
         
         # Use map for collision detection
         self.player.update_physics(self.get_collision_rects())
@@ -213,9 +215,10 @@ class MovementOperon:
                 if tile_type == 1: # COLLISION tile
                     collision_rects.append(pygame.Rect(world_x, world_y, self.map_operon.tile_size, self.map_operon.tile_size))
         
-        # Get door collision rects
-        door_rects = self.map_operon.get_door_collision_rects()
-        collision_rects.extend(door_rects)
+        # Get door collision rects from the interact point operon if available
+        if self.interact_point_operon:
+            door_rects = self.interact_point_operon.get_door_collision_rects()
+            collision_rects.extend(door_rects)
         
         return collision_rects
 

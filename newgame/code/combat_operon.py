@@ -97,7 +97,7 @@ class CombatOperon:
             hitbox_rect = hitbox_surface.get_rect(center=hitbox_start_pos + direction_vector * (hitbox_range / 2))
             
             # Check door damage
-            if map_operon:
+            if map_operon and hasattr(map_operon, 'damage_door_at_rect'):
                 map_operon.damage_door_at_rect(hitbox_rect, attack_data['damage'])
             
             # Check entity damage
@@ -119,7 +119,7 @@ class CombatOperon:
                 self.effects.add(explosion)
                 
                 # Check door damage from explosions
-                if map_operon:
+                if map_operon and hasattr(map_operon, 'damage_door_at_rect'):
                     map_operon.damage_door_at_rect(explosion.rect, attack_data['damage'])
                 
                 # Check entity damage
@@ -152,7 +152,7 @@ class CombatOperon:
                 continue
             
             # Check door damage from projectiles
-            if map_operon:
+            if map_operon and hasattr(map_operon, 'damage_door_at_rect'):
                 map_operon.damage_door_at_rect(proj.rect, proj.damage)
             
             for entity in all_entities:
