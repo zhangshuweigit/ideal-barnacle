@@ -24,8 +24,10 @@
       "Bash(rm:*)",
       "Bash(pip install ruff)",
       "Bash(dir:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(timeout 5 python main.py)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }

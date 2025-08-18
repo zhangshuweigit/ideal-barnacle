@@ -5,11 +5,13 @@ class Weapon:
     def __init__(self, name, damage):
         self.name = name
         self.damage = damage
+        self.skill_cooldown = 1000  # Default 1 second cooldown for skills
 
 class BasicSword(Weapon):
     """基础近战武器：剑。"""
     def __init__(self):
         super().__init__("Basic Sword", 10)
+        self.skill_cooldown = 2000  # 2 seconds cooldown for sword skill
 
     def normal_attack(self):
         return {'type': 'melee', 'damage': self.damage, 'range': 60, 'duration': 200, 'color': (255, 255, 0)}
@@ -21,6 +23,7 @@ class BasicBow(Weapon):
     """基础远程武器：弓。"""
     def __init__(self):
         super().__init__("Basic Bow", 8)
+        self.skill_cooldown = 1500  # 1.5 seconds cooldown for bow skill
 
     def normal_attack(self):
         return {'type': 'projectile', 'damage': self.damage, 'speed': 10}
@@ -43,6 +46,7 @@ class HealPotion(Weapon):
         super().__init__("Heal Potion", 0)
         self.max_uses = 3  # Maximum 3 uses
         self.uses_remaining = self.max_uses
+        self.skill_cooldown = 60000  # 60 seconds cooldown for heal potion
 
     def normal_attack(self):
         if self.uses_remaining > 0:
@@ -99,8 +103,10 @@ class WeaponOperon:
         
         # 技能冷却时间管理
         self.skill_cooldowns = {
-            'sub_1': 0,  # Bomb cooldown end time
-            'sub_2': 0   # HealPotion cooldown end time
+            'main_1': 0,  # Main weapon 1 cooldown
+            'main_2': 0,  # Main weapon 2 cooldown
+            'sub_1': 0,   # Bomb cooldown end time
+            'sub_2': 0    # HealPotion cooldown end time
         } 
 
     def attack(self, actions):
@@ -138,10 +144,10 @@ class WeaponOperon:
         
         direction_vector = pygame.Vector2(self.aiming_direction, 0)
 
-        # --- 技能冷却检查 (只对技能攻击) ---
+        # --- 冷却检查 (技能攻击和有冷却的普通攻击) ---
         current_time = pygame.time.get_ticks()
-        if is_skill and slot in self.skill_cooldowns and current_time < self.skill_cooldowns[slot]:
-            # Skill is on cooldown
+        if slot in self.skill_cooldowns and current_time < self.skill_cooldowns[slot]:
+            # Weapon is on cooldown
             return None
             
         # --- 生成攻击数据 ---
@@ -149,9 +155,14 @@ class WeaponOperon:
         if not attack_data:
             return None
             
-        # --- 设置技能冷却 ---
+        # --- 设置冷却 (技能攻击和有冷却的普通攻击) ---
         if slot in self.skill_cooldowns and hasattr(weapon, 'skill_cooldown'):
-            self.skill_cooldowns[slot] = current_time + weapon.skill_cooldown
+            # For sub weapons, use cooldown on both normal and skill attacks
+            if slot.startswith('sub_'):
+                self.skill_cooldowns[slot] = current_time + weapon.skill_cooldown
+            # For main weapons, only use cooldown on skill attacks
+            elif is_skill:
+                self.skill_cooldowns[slot] = current_time + weapon.skill_cooldown
             
         attack_data['direction'] = direction_vector
         

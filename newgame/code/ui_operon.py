@@ -6,7 +6,26 @@ class UIOperon:
     负责在屏幕上绘制所有用户界面元素，如生命条。
     """
     def __init__(self, font_size=18):
-        self.font = pygame.font.Font(None, font_size)
+        # 尝试加载中文字体，如果失败则使用默认字体
+        try:
+            # 优先使用simhei（黑体），然后simsun（宋体）
+            chinese_fonts = ['simhei', 'simsun']
+            self.font = None
+            for font_name in chinese_fonts:
+                if font_name in pygame.font.get_fonts():
+                    try:
+                        self.font = pygame.font.SysFont(font_name, font_size)
+                        break
+                    except:
+                        continue
+            
+            # 如果中文字体都不可用，使用默认字体
+            if self.font is None:
+                self.font = pygame.font.Font(None, font_size)
+                
+        except:
+            # 任何异常都回退到默认字体
+            self.font = pygame.font.Font(None, font_size)
         self.health_bar_height = 5
         self.health_bar_y_offset = 10
 

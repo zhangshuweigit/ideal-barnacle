@@ -19,6 +19,12 @@ class Player:
         self.roll_timer = 0
         self.roll_direction = 1
         self.is_invincible = False
+        
+        # Death state
+        self.is_dead = False
+        self.death_timer = 0
+        self.death_duration = 2000  # 2 seconds death animation
+        self.death_animation_progress = 0
 
         # Interaction and progression
         self.last_interaction = None
@@ -28,6 +34,10 @@ class Player:
             'jump': 1.0     # Permanent jump multiplier
         }
         self.scroll_collected = 0  # Track total scrolls collected
+        self.currency = 0  # Player's currency
+        self.upgrade_level = 1  # Current upgrade level
+        self.upgrade_cost = 500  # Initial upgrade cost (increases by 500 each time)
+        self.can_upgrade = False  # Flag to show upgrade option
         self.notifications = []  # Store active notifications
 
         # Visuals
@@ -128,6 +138,106 @@ class Player:
         
         print(f"Player received permanent {upgrade_type} upgrade: +{value:.2f} (total: {self.permanent_upgrades[upgrade_type]:.2f}x)")
 
+    def add_currency(self, amount):
+        """Add currency to the player."""
+        self.currency += amount
+        print(f"Player received {amount} currency. Total: {self.currency}")
+        
+        # Check if player can afford upgrade
+        self.check_upgrade_available()
+    
+    def check_upgrade_available(self):
+        """Check if player has enough currency for upgrade."""
+        if self.currency >= self.upgrade_cost:
+            self.can_upgrade = True
+            print(f"Upgrade available! Cost: {self.upgrade_cost}, Currency: {self.currency}")
+        else:
+            self.can_upgrade = False
+    
+    def spend_currency_on_upgrade(self):
+        """Spend currency for upgrade and increase upgrade cost."""
+        if self.currency >= self.upgrade_cost:
+            self.currency -= self.upgrade_cost
+            self.upgrade_level += 1
+            self.upgrade_cost = 500 * self.upgrade_level  # 500, 1000, 1500, 2000...
+            self.can_upgrade = False
+            print(f"Upgrade purchased! New upgrade cost: {self.upgrade_cost}")
+            return True
+        return False
+    
+    def upgrade_attribute(self, attribute_type, value):
+        """Upgrade a specific attribute by given value."""
+        if attribute_type in self.permanent_upgrades:
+            old_value = self.permanent_upgrades[attribute_type]
+            self.permanent_upgrades[attribute_type] += value
+            
+            # Add notification
+            display_names = {
+                'speed': 'Speed',
+                'damage': 'Damage', 
+                'jump': 'Jump'
+            }
+            display_name = display_names.get(attribute_type, attribute_type.title())
+            total_percent = (self.permanent_upgrades[attribute_type] - 1.0) * 100
+            
+            notification = {
+                'text': f"{display_name} 升级 +{value:.2f}! (总计: +{total_percent:.0f}%)",
+                'start_time': pygame.time.get_ticks(),
+                'duration': 4000,  # Show for 4 seconds
+                'color': {
+                    'speed': (100, 200, 255),    # Light blue
+                    'damage': (255, 100, 100),   # Light red
+                    'jump': (100, 255, 100)     # Light green
+                }.get(attribute_type, (255, 255, 0))  # Gold for unknown
+            }
+            self.notifications.append(notification)
+            
+            print(f"Upgraded {attribute_type} by {value:.2f} (total: {self.permanent_upgrades[attribute_type]:.2f}x)")
+    
+    def save_currency(self):
+        """Save player currency to file."""
+        import json
+        save_data = {
+            'currency': self.currency,
+            'permanent_upgrades': self.permanent_upgrades,
+            'upgrade_level': self.upgrade_level,
+            'upgrade_cost': self.upgrade_cost
+        }
+        try:
+            with open('player_save.json', 'w') as f:
+                json.dump(save_data, f)
+            print(f"Saved currency: {self.currency}")
+        except Exception as e:
+            print(f"Failed to save currency: {e}")
+    
+    def load_currency(self):
+        """Load player currency from file."""
+        import json
+        try:
+            with open('player_save.json', 'r') as f:
+                save_data = json.load(f)
+            self.currency = save_data.get('currency', 0)
+            
+            # Load upgrade system data
+            self.upgrade_level = save_data.get('upgrade_level', 1)
+            self.upgrade_cost = save_data.get('upgrade_cost', 500)
+            
+            # Load permanent upgrades if available
+            if 'permanent_upgrades' in save_data:
+                self.permanent_upgrades.update(save_data['permanent_upgrades'])
+            
+            # Check if upgrade is available after loading
+            self.check_upgrade_available()
+            
+            print(f"Loaded currency: {self.currency}")
+            return True
+        except FileNotFoundError:
+            print("No save file found, starting with default currency")
+            return False
+        except Exception as e:
+            print(f"Failed to load currency: {e}")
+            return False
+
     def update_notifications(self):
         """Update and remove expired notifications."""
         current_time = pygame.time.get_ticks()
@@ -148,13 +258,70 @@ class Player:
         """Get the current damage multiplier from permanent upgrades."""
         return self.permanent_upgrades['damage'] 
 
+    def trigger_death(self):
+        """Trigger death state and animation"""
+        if not self.is_dead:
+            self.is_dead = True
+            self.death_timer = pygame.time.get_ticks()
+            self.death_animation_progress = 0
+            self.velocity = pygame.Vector2(0, 0)
+
+    def update_death_state(self):
+        """Update death animation state"""
+        if self.is_dead:
+            current_time = pygame.time.get_ticks()
+            elapsed = current_time - self.death_timer
+            self.death_animation_progress = min(1.0, elapsed / self.death_duration)
+
+    def get_health(self):
+        """Get health data from combat system if available"""
+        # This will be populated by the combat system reference
+        if hasattr(self, '_combat_operon') and self._combat_operon:
+            health_system = self._combat_operon.health_systems.get(self)
+            if health_system:
+                return {
+                    'current': health_system.current_hp,
+                    'max': health_system.max_hp
+                }
+        # Default health values
+        return {'current': 100, 'max': 100}
+
+    def respawn(self, spawn_x=100, spawn_y=500):
+        """Respawn player at given position"""
+        self.rect.x = spawn_x
+        self.rect.y = spawn_y
+        self.velocity = pygame.Vector2(0, 0)
+        self.is_dead = False
+        self.death_timer = 0
+        self.death_animation_progress = 0
+        self.is_rolling = False
+        self.is_invincible = False
+        self.on_ground = False
+
     def draw(self, screen, camera_x=0):
         # Adjust player's drawing position based on the camera
         adjusted_rect = self.rect.copy()
         adjusted_rect.x -= camera_x
         
-        color = self.roll_color if self.is_rolling else self.base_color
-        pygame.draw.rect(screen, color, adjusted_rect)
+        if self.is_dead:
+            # Death animation: gradually fade and fall
+            alpha = 1.0 - self.death_animation_progress
+            fall_offset = int(self.death_animation_progress * 20)
+            
+            # Calculate color with fade effect
+            fade_color = tuple(int(c * alpha) for c in self.base_color)
+            
+            # Draw falling/fading rectangle
+            death_rect = adjusted_rect.copy()
+            death_rect.y += fall_offset
+            
+            # Create surface with alpha for transparency
+            death_surface = pygame.Surface((death_rect.width, death_rect.height), pygame.SRCALPHA)
+            death_surface.fill((*fade_color, int(255 * alpha)))
+            screen.blit(death_surface, death_rect)
+        else:
+            color = self.roll_color if self.is_rolling else self.base_color
+            pygame.draw.rect(screen, color, adjusted_rect)
 
 class MovementOperon:
     """Manages player movement, now including rolling and map collision."""
@@ -167,6 +334,13 @@ class MovementOperon:
         self.platforms = [pygame.Rect(0, screen_height - 40, screen_width, 40)] # Legacy platform
 
     def update(self, actions):
+        # Update death state and animation
+        self.player.update_death_state()
+        
+        # Don't process normal updates if player is dead
+        if self.player.is_dead:
+            return
+        
         if actions.get('roll'):
             self.player.roll()
 
@@ -221,6 +395,12 @@ class MovementOperon:
             collision_rects.extend(door_rects)
         
         return collision_rects
+
+    def respawn_player(self, spawn_x=100, spawn_y=500):
+        """Respawn player at specified position"""
+        self.player.respawn(spawn_x, spawn_y)
+        # Reset camera to follow respawned player
+        return spawn_x
 
     def draw(self, screen, camera_x=0):
         self.player.draw(screen, camera_x)

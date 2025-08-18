@@ -67,10 +67,22 @@ class CombatOperon:
         self.health_systems = {}
         self.projectiles = pygame.sprite.Group()
         self.effects = pygame.sprite.Group()
+        self.damage_callbacks = []
+        self.kill_callbacks = []
 
     def register_entity(self, entity, max_hp):
         if entity not in self.health_systems:
             self.health_systems[entity] = HealthSystem(max_hp)
+            # Set combat system reference for health bar drawing
+            entity._combat_operon = self
+
+    def register_damage_callback(self, callback):
+        """Register a callback function to be called when damage is dealt."""
+        self.damage_callbacks.append(callback)
+
+    def register_kill_callback(self, callback):
+        """Register a callback function to be called when an entity is killed."""
+        self.kill_callbacks.append(callback)
 
     def process_attack(self, attack_data, all_entities, attacker, map_operon=None):
         if not attack_data:
@@ -187,10 +199,28 @@ class CombatOperon:
 
         if target_entity in self.health_systems:
             health = self.health_systems[target_entity]
+            old_hp = health.current_hp
             health.take_damage(final_damage)
+            
+            # Notify damage callbacks
+            is_critical = final_damage > damage * 1.5  # Simple critical hit detection
+            for callback in self.damage_callbacks:
+                callback(target_entity, final_damage, attacker_entity, is_critical)
+            
             if health.is_dead():
-                if hasattr(target_entity, 'kill'): target_entity.kill()
-                self.health_systems.pop(target_entity, None)
+                # Notify kill callbacks
+                for callback in self.kill_callbacks:
+                    callback(target_entity, attacker_entity)
+                
+                # Trigger death animation for player and auto-save currency
+                if hasattr(target_entity, 'trigger_death'):
+                    target_entity.trigger_death()
+                    # Auto-save currency when player dies
+                    if hasattr(target_entity, 'save_currency'):
+                        target_entity.save_currency()
+                else:
+                    if hasattr(target_entity, 'kill'): target_entity.kill()
+                    self.health_systems.pop(target_entity, None)
     
     def apply_heal(self, target_entity, amount):
         if target_entity in self.health_systems:

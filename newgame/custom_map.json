@@ -22059,6 +22059,20 @@
                 800.0,
                 608
             ]
+        },
+        {
+            "type": "melee",
+            "pos": [
+                1506.0,
+                606
+            ]
+        },
+        {
+            "type": "ranged",
+            "pos": [
+                1664.0,
+                606
+            ]
         }
     ],
     "weapon_spawn_points": [],
@@ -22069,7 +22083,7 @@
                 848,
                 592
             ],
-            "is_open": false,
+            "is_open": true,
             "is_broken": false,
             "is_collected": false,
             "is_group": true,
