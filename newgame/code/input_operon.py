@@ -41,7 +41,7 @@ class InputOperon:
             'add_melee_spawn': False, 'add_ranged_spawn': False, 'remove_spawn_point': False,
             'add_weapon_spawn': False,
             'add_door_interact': False, 'add_scroll_interact': False, 'add_chest_interact': False,
-            'active_slot': None, 'is_skill': False,
+            'active_slot': None, 'is_skill': False, 'attack': False,
             'mouse_pos': pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
         }
 
@@ -98,7 +98,10 @@ class InputOperon:
                 slot = self.mouse_map[event.button]
                 self.mouse_down_times[slot] = pygame.time.get_ticks()
                 self.skill_triggered[slot] = False
-        
+                # 设置攻击状态
+                actions['attack'] = True
+                actions['active_slot'] = slot
+
         if event.type == pygame.MOUSEBUTTONUP:
             if event.button in self.mouse_map:
                 slot = self.mouse_map[event.button]

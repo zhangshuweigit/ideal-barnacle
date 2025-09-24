@@ -91,6 +91,53 @@ class WeaponOperon:
             'main_1': BasicSword(), 'main_2': BasicBow(),
             'sub_1': Bomb(), 'sub_2': HealPotion()
         }
+
+        # --- 状态管理 ---
+        self.is_attacking = False
+        self.attack_timer = 0
+        self.attack_duration = 0
+        self.attack_hitbox = None
+
+        # 核心：此类自己维护和"记忆"瞄准方向，1为右，-1为左。
+        self.aiming_direction = 1
+
+        # 技能冷却时间管理
+        self.skill_cooldowns = {
+            'main_1': 0,  # Main weapon 1 cooldown
+            'main_2': 0,  # Main weapon 2 cooldown
+            'sub_1': 0,   # Bomb cooldown end time
+            'sub_2': 0    # HealPotion cooldown end time
+        }
+
+        # 移除了射击相关变量
+
+    def get_weapon_data(self):
+        """获取当前武器槽位数据用于保存"""
+        weapon_data = {}
+        for slot, weapon in self.slots.items():
+            if weapon:
+                weapon_data[slot] = {
+                    'name': weapon.name,
+                    'class': weapon.__class__.__name__
+                }
+        return weapon_data
+    
+    def load_weapon_data(self, weapon_data):
+        """从保存的数据加载武器"""
+        weapon_classes = {
+            'BasicSword': BasicSword,
+            'BasicBow': BasicBow,
+            'Bomb': Bomb,
+            'HealPotion': HealPotion,
+            'FireSword': FireSword,
+            'IceBow': IceBow
+        }
+        
+        for slot, data in weapon_data.items():
+            if slot in self.slots and 'class' in data:
+                weapon_class_name = data['class']
+                if weapon_class_name in weapon_classes:
+                    self.slots[slot] = weapon_classes[weapon_class_name]()
         
         # --- 状态管理 ---
         self.is_attacking = False
@@ -100,7 +147,12 @@ class WeaponOperon:
         
         # 核心：此类自己维护和"记忆"瞄准方向，1为右，-1为左。
         self.aiming_direction = 1
-        
+
+        # 重置射击序列状态
+        self.shot_count = 0
+        self.last_shot_sequence_time = 0
+        self.is_rapid_shot_sequence = False
+
         # 技能冷却时间管理
         self.skill_cooldowns = {
             'main_1': 0,  # Main weapon 1 cooldown
@@ -114,6 +166,7 @@ class WeaponOperon:
         处理攻击输入。所有方向逻辑都在此函数内完成，不再依赖外部计算。
         """
         # --- 攻击前置检查 ---
+        # 只检查是否正在攻击，允许快速射击
         if self.is_attacking or not actions.get('active_slot'):
             return None
 
@@ -121,7 +174,7 @@ class WeaponOperon:
         weapon = self.slots.get(slot)
         if not weapon:
             return None
-            
+
         is_skill = actions.get('is_skill', False)
         if 'sub' in slot and is_skill:
             return None
@@ -139,9 +192,9 @@ class WeaponOperon:
                 self.aiming_direction = -1
             else:
                 self.aiming_direction = 1
-        
+
         # 2. 如果鼠标不在窗口内，aiming_direction会保持上一次的值（实现记忆）
-        
+
         direction_vector = pygame.Vector2(self.aiming_direction, 0)
 
         # --- 冷却检查 (技能攻击和有冷却的普通攻击) ---
@@ -149,12 +202,12 @@ class WeaponOperon:
         if slot in self.skill_cooldowns and current_time < self.skill_cooldowns[slot]:
             # Weapon is on cooldown
             return None
-            
+
         # --- 生成攻击数据 ---
         attack_data = weapon.skill_attack() if is_skill else weapon.normal_attack()
         if not attack_data:
             return None
-            
+
         # --- 设置冷却 (技能攻击和有冷却的普通攻击) ---
         if slot in self.skill_cooldowns and hasattr(weapon, 'skill_cooldown'):
             # For sub weapons, use cooldown on both normal and skill attacks
@@ -163,9 +216,11 @@ class WeaponOperon:
             # For main weapons, only use cooldown on skill attacks
             elif is_skill:
                 self.skill_cooldowns[slot] = current_time + weapon.skill_cooldown
-            
+
         attack_data['direction'] = direction_vector
-        
+
+      # 移除了射击状态触发逻辑
+
         # --- 处理近战攻击的特殊状态 ---
         if attack_data.get('type') == 'melee':
             self.is_attacking = True
@@ -175,28 +230,44 @@ class WeaponOperon:
             # 近战攻击的方向也使用计算好的瞄准方向
             self.attack_direction = direction_vector
             self.attack_timer = pygame.time.get_ticks()
-            
-            # 直接创建攻击hitbox
-            hitbox_start_x = player_rect.centerx if self.aiming_direction > 0 else player_rect.centerx - self.attack_range
+
+            # 根据鼠标位置确定攻击方向
+            mouse_screen_x = mouse_pos[0] + camera_x if camera_x else mouse_pos[0]
+            attack_direction = 1 if player_rect.centerx < mouse_screen_x else -1
+
+            # 创建攻击hitbox，绑定在角色身上
             self.attack_hitbox = pygame.Rect(
-                hitbox_start_x, 
-                player_rect.centery - 20,  # Center vertically on player
-                self.attack_range, 
+                player_rect.centerx if attack_direction > 0 else player_rect.centerx - self.attack_range,
+                player_rect.centery - 20,
+                self.attack_range,
                 40
             )
-        
+
+            # 保存攻击方向用于后续更新
+            self.attack_direction = attack_direction
+
         return attack_data
 
     def update(self, player_rect, mouse_pos):
-        """更新近战攻击的动画和 hitbox。"""
+        """更新近战攻击和射击状态。"""
+        current_time = pygame.time.get_ticks()
+
+        # 更新近战攻击状态
         if self.is_attacking:
-            if pygame.time.get_ticks() - self.attack_timer > self.attack_duration:
+            if current_time - self.attack_timer > self.attack_duration:
                 self.is_attacking = False
                 self.attack_hitbox = None
             else:
-                # 使用 attack_direction (在 attack 方法中设置) 来更新 hitbox
-                hitbox_start_x = player_rect.centerx if self.attack_direction.x > 0 else player_rect.centerx - self.attack_range
-                self.attack_hitbox = pygame.Rect(hitbox_start_x, player_rect.centery - 20, self.attack_range, 40)
+                # 更新攻击hitbox位置，使其跟随角色移动
+                if hasattr(self, 'attack_direction'):
+                    self.attack_hitbox = pygame.Rect(
+                        player_rect.centerx if self.attack_direction > 0 else player_rect.centerx - self.attack_range,
+                        player_rect.centery - 20,
+                        self.attack_range,
+                        40
+                    )
+
+        # 移除了射击状态更新逻辑
 
     def draw(self, screen, camera_x=0):
         """绘制近战攻击的可视化效果。"""
@@ -205,13 +276,15 @@ class WeaponOperon:
             adjusted_hitbox.x -= camera_x
             pygame.draw.rect(screen, self.attack_color, adjusted_hitbox)
 
-    def update(self, player_rect, mouse_pos):
-        """Update weapon state (currently just for attack timing)."""
-        # Update attack state
-        if self.is_attacking:
-            if pygame.time.get_ticks() - self.attack_timer > self.attack_duration:
-                self.is_attacking = False
-                self.attack_hitbox = None
+    def get_shot_interval_info(self):
+        """获取射击间隔信息，用于动画系统决定播放哪一帧"""
+        current_time = pygame.time.get_ticks()
+        time_since_last_shot = current_time - self.last_shot_time
+
+        # 如果距离上次射击不到1秒，返回True表示应该播放最后一张图片
+        return time_since_last_shot < 1000
+
+    # 移除了快速射击检查方法
 
     def handle_chest_reward(self, chest_info):
         """处理宝箱奖励，随机给予玩家新武器。"""

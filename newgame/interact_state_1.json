@@ -1,0 +1,38 @@
+[
+    {
+        "pos": [
+            848,
+            592
+        ],
+        "type": "door",
+        "is_collected": false,
+        "collection_time": null
+    },
+    {
+        "pos": [
+            1552,
+            272
+        ],
+        "type": "chest",
+        "is_collected": false,
+        "collection_time": null
+    },
+    {
+        "pos": [
+            1552,
+            272
+        ],
+        "type": "chest",
+        "is_collected": false,
+        "collection_time": null
+    },
+    {
+        "pos": [
+            2160,
+            560
+        ],
+        "type": "scroll",
+        "is_collected": true,
+        "collection_time": 52179
+    }
+]

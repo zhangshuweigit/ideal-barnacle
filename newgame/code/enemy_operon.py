@@ -28,6 +28,14 @@ class Enemy(pygame.sprite.Sprite):
         self.is_aggressive = False  # Becomes aggressive when attacked
         self.aggressive_timer = 0  # Timer for aggressive state
         self.aggressive_duration = 5000  # 5 seconds of aggressive behavior
+        
+        # Patrol properties
+        self.patrol_center = pygame.Vector2(self.rect.center)  # Center of patrol area
+        self.patrol_radius = 150  # Patrol radius around center
+        self.patrol_speed = 1  # Slower speed when patrolling
+        self.patrol_direction = 1  # 1 for right, -1 for left
+        self.patrol_wait_timer = 0  # Timer for waiting at patrol endpoints
+        self.patrol_wait_duration = 2000  # 2 seconds wait at endpoints
 
     def can_attack(self):
         return pygame.time.get_ticks() - self.last_attack_time > self.attack_cooldown
@@ -126,6 +134,31 @@ class Enemy(pygame.sprite.Sprite):
         self.is_aggressive = True
         self.aggressive_timer = pygame.time.get_ticks()
         print("Enemy became aggressive after taking damage!")
+    
+    def update_patrol_behavior(self):
+        """Update patrol behavior when player is not detected and not aggressive"""
+        current_time = pygame.time.get_ticks()
+        
+        # Check if waiting at endpoint
+        if self.patrol_wait_timer > 0:
+            if current_time - self.patrol_wait_timer > self.patrol_wait_duration:
+                self.patrol_wait_timer = 0
+                self.patrol_direction *= -1  # Reverse direction
+                print("Enemy finished waiting, changing patrol direction")
+            return
+        
+        # Calculate distance from patrol center
+        distance_from_center = abs(self.rect.centerx - self.patrol_center.x)
+        
+        # Check if reached patrol boundary
+        if distance_from_center >= self.patrol_radius:
+            # Wait at endpoint
+            self.patrol_wait_timer = current_time
+            self.velocity.x = 0
+            print("Enemy reached patrol boundary, waiting...")
+        else:
+            # Continue patrol
+            self.velocity.x = self.patrol_direction * self.patrol_speed
 
     def draw(self, screen, camera_x=0):
         # Adjust drawing position based on camera
@@ -213,7 +246,8 @@ class MeleeEnemy(Enemy):
                     random.random() < 0.02):  # 2% chance to jump
                     self.velocity.y = -10  # Same jump strength as player
         else:
-            self.velocity.x = 0
+            # Player not detected or aggressive, implement patrol behavior
+            self.update_patrol_behavior()
 
     def _update_hitbox(self, player):
         direction = 1 if player.rect.centerx > self.rect.centerx else -1
@@ -306,14 +340,20 @@ class ShieldEnemy(Enemy):
         else:
             self.image.fill((100, 100, 255))
         
-        # Move towards player if detected
-        if self.has_detected_player:
+        # Move towards player if detected or aggressive
+        if self.has_detected_player or self.is_aggressive:
             direction_vector = pygame.Vector2(player.rect.centerx - self.rect.centerx, 0)
             if direction_vector.length() > 0:
                 direction_vector = direction_vector.normalize()
                 self.velocity.x = direction_vector.x * self.speed
         else:
-            self.velocity.x = 0
+            # Player not detected or aggressive, implement patrol behavior
+            self.update_patrol_behavior()
+    
+    def take_damage(self, amount):
+        """Handle taking damage - becomes aggressive"""
+        super().take_damage(amount)
+        print("Shield enemy became aggressive!")
 
 class EnemyOperon:
     """Manages all enemies and collects their attack data."""
@@ -349,3 +389,57 @@ class EnemyOperon:
     def clear_all_enemies(self):
         """Clear all enemies from the game"""
         self.enemies.empty()
+        
+    def save_enemies(self, filename):
+        """Save current enemy states to file."""
+        import json
+        enemy_data = []
+        for enemy in self.enemies:
+            enemy_info = {
+                'type': enemy.__class__.__name__,
+                'x': enemy.rect.x,
+                'y': enemy.rect.y,
+                'health': getattr(enemy, 'health', 100),  # Assuming default health of 100
+                # Add other enemy-specific attributes as needed
+            }
+            enemy_data.append(enemy_info)
+        
+        try:
+            with open(filename, 'w') as f:
+                json.dump(enemy_data, f)
+            print(f"Saved {len(enemy_data)} enemies to {filename}")
+        except Exception as e:
+            print(f"Failed to save enemies: {e}")
+    
+    def load_enemies(self, filename, combat_operon):
+        """Load enemy states from file."""
+        import json
+        try:
+            with open(filename, 'r') as f:
+                enemy_data = json.load(f)
+            
+            # Clear existing enemies
+            self.clear_all_enemies()
+            
+            # Spawn enemies from saved data
+            for data in enemy_data:
+                enemy_type = data.get('type', 'melee').lower()
+                x = data.get('x', 0)
+                y = data.get('y', 0)
+                
+                # Create enemy based on type
+                self.create_enemy(enemy_type, x, y)
+                
+                # Restore enemy health if combat system is available
+                if combat_operon:
+                    # This would need to be expanded to restore health properly
+                    pass
+                    
+            print(f"Loaded {len(enemy_data)} enemies from {filename}")
+            return True
+        except FileNotFoundError:
+            print(f"No enemy save file {filename} found")
+            return False
+        except Exception as e:
+            print(f"Failed to load enemies: {e}")
+            return False

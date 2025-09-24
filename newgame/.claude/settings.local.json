@@ -25,7 +25,10 @@
       "Bash(pip install ruff)",
       "Bash(dir:*)",
       "Bash(pip install:*)",
-      "Bash(timeout 5 python main.py)"
+      "Bash(timeout 5 python main.py)",
+      "Bash(sed:*)",
+      "Bash(timeout:*)",
+      "Bash(jobs:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

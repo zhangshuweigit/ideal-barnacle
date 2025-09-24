@@ -8,6 +8,8 @@ from code.generation_operon import GenerationOperon
 from code.npc_operon import NPCOperon
 from code.ui_operon import UIOperon
 from code.enhanced_ui_operon import EnhancedUIOperon
+from code.menu_operon import MenuOperon
+from code.save_select_operon import SaveSelectOperon
 from code.map_modules.map_data_operon import MapDataOperon, COLLISION, NPC, EMPTY, SPAWN_MELEE, SPAWN_RANGED, SPAWN_WEAPON
 from code.map_modules.map_render_operon import MapRenderOperon
 from code.map_modules.map_edit_operon import MapEditOperon
@@ -25,12 +27,20 @@ class Game:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Bacterial Roguelite - Editor Mode")
+        pygame.display.set_caption("Bacterial Roguelite")
         self.clock = pygame.time.Clock()
         self.is_running = True
         self.is_edit_mode = True # Start in edit mode
         self.is_paused = False
         self.show_inventory = False
+        self.current_screen = "menu"  # Add screen state tracking
+        
+        # Initialize selected save slot
+        self.selected_save_slot = None
+        
+        # Chest reset timer
+        self.chest_reset_interval = 300000  # 5 minutes in milliseconds
+        self.last_chest_reset = pygame.time.get_ticks()
         
         # Initialize all operons
         self._initialize_operons()
@@ -43,10 +53,7 @@ class Game:
         self.movement_operon.player._combat_operon = self.combat_operon
         
         # Load saved currency and upgrades
-        self.movement_operon.player.load_currency()
-        
-        # Generate level using spawn points
-        self._generate_level()
+        self.movement_operon.player.load_currency(self.selected_save_slot)
 
     def _initialize_operons(self):
         """Initialize all operons with their dependencies."""
@@ -56,6 +63,7 @@ class Game:
         map_width = 1000
         map_height = SCREEN_HEIGHT // TILE_SIZE
         self.map_data_operon = MapDataOperon(map_width, map_height, TILE_SIZE)
+        # Load map - always load custom_map.json as the base map for all save slots
         self.map_data_operon.load_from_file('custom_map.json')
         
         # Map module operons
@@ -72,14 +80,19 @@ class Game:
         self.weapon_operon = WeaponOperon()
         self.ui_operon = UIOperon()
         self.enhanced_ui_operon = EnhancedUIOperon(SCREEN_WIDTH, SCREEN_HEIGHT)
+        self.menu_operon = MenuOperon(SCREEN_WIDTH, SCREEN_HEIGHT)  # Add menu operon
+        self.save_select_operon = SaveSelectOperon(SCREEN_WIDTH, SCREEN_HEIGHT)  # Add save select operon
         
         # Register damage callback
         self.combat_operon.register_damage_callback(self._on_damage_dealt)
         
         # Register kill callback
         self.combat_operon.register_kill_callback(self._on_entity_killed)
+        
+        # Generate level using spawn points
+        self._generate_level_initial()
 
-    def _generate_level(self):
+    def _generate_level_initial(self):
         """Generate level using spawn points from map or default layout."""
         if self.map_data_operon.spawn_points:
             level_layout = {'enemies': self.map_data_operon.spawn_points}
@@ -93,6 +106,54 @@ class Game:
                 ]
             }
             self.generation_operon.generate_level(default_layout)
+
+    def _reset_player_state(self):
+        """Reset player state for a new game or save slot."""
+        player = self.movement_operon.player
+        
+        # Try to load saved player data
+        if self.selected_save_slot is not None:
+            player.load_currency(self.selected_save_slot, self.weapon_operon)
+            # Load enemies as well
+            enemy_save_file = f'enemies_save_{self.selected_save_slot}.json'
+            self.enemy_operon.load_enemies(enemy_save_file, self.combat_operon)
+            # Load interact point states
+            interact_state_file = f'interact_state_{self.selected_save_slot}.json'
+            self.map_data_operon.load_interact_state(interact_state_file)
+        else:
+            # Reset currency and upgrades
+            player.currency = 0
+            player.permanent_upgrades = {
+                'speed': 1.0,
+                'damage': 1.0,
+                'jump': 1.0
+            }
+            player.scroll_collected = 0
+            player.upgrade_level = 1
+            player.upgrade_cost = 500
+            player.can_upgrade = False
+            player.notifications = []
+            
+            # Reset combat state
+            if player in self.combat_operon.health_systems:
+                health_system = self.combat_operon.health_systems[player]
+                health_system.current_hp = health_system.max_hp
+            
+            # Reset death state
+            player.is_dead = False
+            player.death_timer = 0
+            player.death_animation_progress = 0
+            
+            # Reset interaction state
+            player.last_interaction = None
+            
+            # Clear enemies
+            self.enemy_operon.clear_all_enemies()
+            
+            # Generate level with enemies
+            self._generate_level_initial()
+        
+        print(f"Player state loaded for save slot {self.selected_save_slot}")
 
     def run(self):
         """The main game loop following bacterial principles."""
@@ -112,11 +173,40 @@ class Game:
 
     def handle_events(self, events):
         """Processes quit events and mode switching."""
-        for event in events:
-            if event.type == pygame.QUIT:
+        # Get mouse position for UI interactions
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Handle events based on current screen
+        if self.current_screen == "menu":
+            result = self.menu_operon.handle_events(events, mouse_pos)
+            if result == "start_game":
+                self.current_screen = "save_select"
+            elif result == "exit_game":
                 self.is_running = False
-            if event.type == pygame.KEYDOWN:
-                self._handle_keydown_events(event)
+        elif self.current_screen == "save_select":
+            result = self.save_select_operon.handle_events(events, mouse_pos)
+            if result and result.startswith("select_save_"):
+                # Extract save slot number
+                self.selected_save_slot = int(result.split("_")[-1])
+                self.current_screen = "game"
+                self.is_edit_mode = False
+                pygame.display.set_caption("Bacterial Roguelite - Game Mode")
+                # Reset player state for new game - this will load saved position
+                self._reset_player_state()
+                # Update camera to follow loaded player position
+                self.camera_x = self.movement_operon.player.rect.centerx - SCREEN_WIDTH / 2
+            elif result and result.startswith("deleted_save_"):
+                # 存档已被删除，不需要特殊处理，界面会自动更新
+                pass
+            elif result == "back_to_menu":
+                self.current_screen = "menu"
+        else:
+            # Game events
+            for event in events:
+                if event.type == pygame.QUIT:
+                    self.is_running = False
+                if event.type == pygame.KEYDOWN:
+                    self._handle_keydown_events(event)
 
     def _handle_keydown_events(self, event):
         """Handle keydown events for mode switching."""
@@ -133,7 +223,10 @@ class Game:
                 self.show_inventory = not self.show_inventory
         elif event.key == pygame.K_s:
             # Manual save (press S to save)
-            self.movement_operon.player.save_currency()
+            self.movement_operon.player.save_currency(self.selected_save_slot, self.weapon_operon)
+            # Save enemies as well
+            enemy_save_file = f'enemies_save_{self.selected_save_slot}.json' if self.selected_save_slot is not None else 'enemies_save.json'
+            self.enemy_operon.save_enemies(enemy_save_file)
         elif event.key == pygame.K_r:
             # Handle respawn when player is dead
             if self.movement_operon.player.is_dead:
@@ -155,6 +248,9 @@ class Game:
         if self.is_paused or self.show_inventory:
             return
         
+        # Check if it's time to reset chests
+        self._check_chest_reset()
+        
         # Mode-specific processing
         self._process_mode_logic(actions)
         
@@ -163,6 +259,15 @@ class Game:
         
         # Update camera to follow player
         self._update_camera()
+        
+    def _check_chest_reset(self):
+        """Check if it's time to reset interact points (chests and scrolls)"""
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_chest_reset > self.chest_reset_interval:
+            # Reset interact points
+            self.map_data_operon.reset_interact_points()
+            self.last_chest_reset = current_time
+            print("Chests and scrolls have been reset!")
 
     def _process_mode_logic(self, actions):
         """Process logic based on current mode."""
@@ -200,6 +305,29 @@ class Game:
         # Handle interact point editing
         self._handle_interact_editing(world_pos, actions)
 
+    def _update_edit_mode(self, actions):
+        """Handles updates when in map editor mode."""
+        keys = pygame.key.get_pressed()
+        mouse_buttons = pygame.mouse.get_pressed()
+        
+        # Process map editing when SHIFT is pressed
+        if (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and actions.get('mouse_pos'):
+            self._process_map_editing(actions, mouse_buttons)
+        
+        # Process map saving
+        if actions.get('save_map'):
+            # Save base map to all save slots to keep them synchronized
+            self.map_data_operon.save_to_file('custom_map.json')
+            for slot in range(1, 4):
+                self.map_data_operon.save_to_file(f'map_save_{slot}.json', slot)
+            
+            # Save interact point states separately for each save slot
+            if self.selected_save_slot is not None:
+                interact_state_file = f'interact_state_{self.selected_save_slot}.json'
+                self.map_data_operon.save_interact_state(interact_state_file)
+            
+            print("Save action triggered!")
+
     def _handle_tile_editing(self, mouse_pos, mouse_buttons):
         """Handle tile editing operations."""
         if mouse_buttons[0]:
@@ -235,8 +363,39 @@ class Game:
         actions['player_rect'] = self.movement_operon.player.rect
         actions['camera_x'] = self.camera_x
         
-        # Process player attack
-        player_attack = self.weapon_operon.attack(actions)
+        # 处理玩家攻击
+        player_attack = None
+
+        if actions.get('attack'):
+            # 检查是否为远程武器槽位
+            slot = actions.get('active_slot')
+            weapon = self.weapon_operon.slots.get(slot)
+
+            if weapon and hasattr(weapon, 'normal_attack'):
+                # 预先检查攻击类型
+                preview_attack = weapon.normal_attack()
+
+                if preview_attack.get('type') == 'projectile':
+                    # 远程攻击：根据鼠标位置确定射击方向
+                    mouse_pos = actions.get('mouse_pos')
+                    player_rect = actions.get('player_rect')
+                    camera_x = actions.get('camera_x', 0)
+
+                    if mouse_pos and player_rect:
+                        mouse_screen_x = mouse_pos[0] + camera_x
+                        attack_direction = 1 if player_rect.centerx < mouse_screen_x else -1
+
+                        # 更新角色朝向
+                        self.movement_operon.player.facing_direction = attack_direction
+
+                        # 开始射击动画
+                        shot_result = self.movement_operon.player.start_ranged_attack(attack_direction)
+
+                        # 远程攻击立即发射子弹
+                        player_attack = self.weapon_operon.attack(actions)
+                else:
+                    # 近战攻击：直接执行，不播放射击动画
+                    player_attack = self.weapon_operon.attack(actions)
         
         # Update enemies and NPCs
         enemy_attacks = self.enemy_operon.update(self.movement_operon.player, self.map_data_operon)
@@ -257,6 +416,8 @@ class Game:
         
         # Update weapon operon
         self.weapon_operon.update(self.movement_operon.player.rect, actions.get('mouse_pos'))
+
+        # 移除了动画状态同步逻辑
 
     def _handle_player_interactions(self):
         """Handle player interactions with chests and scrolls."""
@@ -393,13 +554,14 @@ class Game:
     def _handle_player_respawn(self):
         """Handle player respawn after death."""
         # Reload saved currency and upgrades
-        self.movement_operon.player.load_currency()
+        self.movement_operon.player.load_currency(self.selected_save_slot, self.weapon_operon)
         
-        # Reset player position
-        spawn_x = self.movement_operon.respawn_player(100, 500)
+        # Reset player position based on selected save slot
+        # For respawn, we'll use the initial spawn point rather than saved position
+        self._set_player_spawn_point()
         
         # Reset camera to follow respawned player
-        self.camera_x = spawn_x - SCREEN_WIDTH / 2
+        self.camera_x = self.movement_operon.player.rect.centerx - SCREEN_WIDTH / 2
         
         # Reset player health
         if self.movement_operon.player in self.combat_operon.health_systems:
@@ -408,7 +570,7 @@ class Game:
         
         # Clear enemies and regenerate level
         self.enemy_operon.clear_all_enemies()
-        self._generate_level()
+        self._generate_level_initial()
         
         print("Player respawned at starting position")
 
@@ -436,7 +598,14 @@ class Game:
     def _cleanup(self):
         """Save currency before game closes."""
         print("Saving game progress...")
-        self.movement_operon.player.save_currency()
+        self.movement_operon.player.save_currency(self.selected_save_slot, self.weapon_operon)
+        # Save enemies as well
+        if self.selected_save_slot is not None:
+            enemy_save_file = f'enemies_save_{self.selected_save_slot}.json'
+            self.enemy_operon.save_enemies(enemy_save_file)
+            # Save interact point states
+            interact_state_file = f'interact_state_{self.selected_save_slot}.json'
+            self.map_data_operon.save_interact_state(interact_state_file)
         print("Game saved successfully!")
 
     def render_frame(self):
@@ -444,11 +613,17 @@ class Game:
         # Clear screen
         self.screen.fill((20, 20, 30))
         
-        # Draw map and game entities
-        self._render_game_world()
-        
-        # Draw UI elements
-        self._render_ui()
+        # Draw based on current screen
+        if self.current_screen == "menu":
+            self.menu_operon.draw(self.screen)
+        elif self.current_screen == "save_select":
+            self.save_select_operon.draw(self.screen)
+        else:
+            # Draw map and game entities
+            self._render_game_world()
+            
+            # Draw UI elements
+            self._render_ui()
         
         # Present frame
         pygame.display.flip()
@@ -461,6 +636,16 @@ class Game:
         self.npc_operon.draw(self.screen, self.camera_x)
         self.weapon_operon.draw(self.screen, self.camera_x)
         self.combat_operon.draw(self.screen, self.camera_x)
+
+    def _set_player_spawn_point(self):
+        """Set player spawn point to initial position."""
+        # For now, all save slots start at the same initial position
+        spawn_x, spawn_y = 100, 500
+        
+        # Respawn player at the initial spawn point
+        self.movement_operon.respawn_player(spawn_x, spawn_y)
+        
+        print(f"Player spawned at initial position {spawn_x}, {spawn_y}")
 
     def _render_ui(self):
         """Render all UI elements using the enhanced UI operon."""

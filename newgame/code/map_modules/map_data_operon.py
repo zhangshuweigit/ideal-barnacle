@@ -53,8 +53,12 @@ class MapDataOperon:
             return self.map_data[map_y][map_x]
         return None
 
-    def save_to_file(self, filename):
+    def save_to_file(self, filename, save_slot=None):
         """Saves the current state of the entire map and all points."""
+        # If save_slot is provided, modify filename to include slot number
+        if save_slot is not None:
+            filename = f"map_save_{save_slot}.json"
+        
         data_to_save = {
             'map_layout': self.map_data,
             'spawn_points': self.spawn_points,
@@ -67,11 +71,59 @@ class MapDataOperon:
             print(f"Full map data saved to {filename}")
         except IOError as e:
             print(f"Error saving map data to {filename}: {e}")
+            
+    def save_interact_state(self, filename):
+        """Save only the interact point states (collected status) to a separate file."""
+        interact_states = []
+        for point in self.interact_points:
+            interact_states.append({
+                'pos': point['pos'],
+                'type': point['type'],
+                'is_collected': point.get('is_collected', False),
+                'collection_time': point.get('collection_time', None)
+            })
+        
+        try:
+            with open(filename, 'w') as f:
+                json.dump(interact_states, f, indent=4)
+            print(f"Interact states saved to {filename}")
+        except IOError as e:
+            print(f"Error saving interact states to {filename}: {e}")
+    
+    def load_interact_state(self, filename):
+        """Load interact point states from a separate file."""
+        try:
+            with open(filename, 'r') as f:
+                interact_states = json.load(f)
+            
+            # Update interact points with saved states
+            for saved_point in interact_states:
+                for point in self.interact_points:
+                    # Match points by position and type
+                    if (point['pos'] == saved_point['pos'] and 
+                        point['type'] == saved_point['type']):
+                        point['is_collected'] = saved_point.get('is_collected', False)
+                        if 'collection_time' in saved_point:
+                            point['collection_time'] = saved_point['collection_time']
+                        break
+                        
+            print(f"Interact states loaded from {filename}")
+            return True
+        except FileNotFoundError:
+            print(f"Interact state file '{filename}' not found.")
+            return False
+        except Exception as e:
+            print(f"Error loading interact states from {filename}: {e}")
+            return False
 
-    def load_from_file(self, filename):
+    def load_from_file(self, filename, save_slot=None):
         """
         Loads the entire map state from a saved file.
         """
+        # If save_slot is provided, modify filename to include slot number
+        if save_slot is not None:
+            filename = f"map_save_{save_slot}.json"
+        
         try:
             with open(filename, 'r') as f:
                 data = json.load(f)
@@ -90,3 +142,12 @@ class MapDataOperon:
             print(f"Map file '{filename}' not found. Using default empty map.")
         except Exception as e:
             print(f"An error occurred while loading map: {e}")
+            
+    def reset_interact_points(self):
+        """Reset all interact points to uncollected state"""
+        for point in self.interact_points:
+            if point['type'] in [INTERACT_CHEST, INTERACT_SCROLL]:
+                point['is_collected'] = False
+                if 'collection_time' in point:
+                    del point['collection_time']
+        print("Interact points reset to uncollected state")

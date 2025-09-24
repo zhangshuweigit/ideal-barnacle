@@ -119,6 +119,8 @@ class CombatOperon:
         
         elif attack_type == 'projectile':
             px, py = attacker.rect.center
+            # 调整子弹发射位置，稍微调高但不超过敌人高度
+            py -= 20  # 向上调整20像素
             direction_vector = attack_data.get('direction', pygame.Vector2(1, 0))
             proj = Projectile(px, py, direction_vector, attack_data['speed'], attack_data['damage'], attacker)
             self.projectiles.add(proj)
@@ -201,6 +203,10 @@ class CombatOperon:
             health = self.health_systems[target_entity]
             old_hp = health.current_hp
             health.take_damage(final_damage)
+            
+            # Call enemy's take_damage method for AI response
+            if hasattr(target_entity, 'take_damage'):
+                target_entity.take_damage(final_damage)
             
             # Notify damage callbacks
             is_critical = final_damage > damage * 1.5  # Simple critical hit detection

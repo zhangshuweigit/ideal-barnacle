@@ -1,4 +1,5 @@
 import pygame
+import os
 
 # --- Constants ---
 PLAYER_SPEED = 5
@@ -7,19 +8,26 @@ JUMP_STRENGTH = -12
 ROLL_SPEED = 10
 ROLL_DURATION = 300 # in milliseconds
 
+# Animation imports
+from code.simple_animation import SimpleFrameAnimation
+from code.shooting_animation import ShootingAnimation
+
 class Player:
     """Represents the player character, now with rolling capabilities."""
     def __init__(self, x, y):
+        # Collision rectangle (maintain original size for physics)
         self.rect = pygame.Rect(x, y, 32, 64)
+        # Visual rectangle (for drawing animations)
+        self.visual_rect = pygame.Rect(x, y, 96, 128)
         self.velocity = pygame.Vector2(0, 0)
         self.on_ground = False
-        
+
         # State management
         self.is_rolling = False
         self.roll_timer = 0
         self.roll_direction = 1
         self.is_invincible = False
-        
+
         # Death state
         self.is_dead = False
         self.death_timer = 0
@@ -30,7 +38,7 @@ class Player:
         self.last_interaction = None
         self.permanent_upgrades = {
             'speed': 1.0,    # Permanent speed multiplier
-            'damage': 1.0,   # Permanent damage multiplier  
+            'damage': 1.0,   # Permanent damage multiplier
             'jump': 1.0     # Permanent jump multiplier
         }
         self.scroll_collected = 0  # Track total scrolls collected
@@ -40,17 +48,53 @@ class Player:
         self.can_upgrade = False  # Flag to show upgrade option
         self.notifications = []  # Store active notifications
 
+        # Animation system
+        try:
+            self.animation_system = SimpleFrameAnimation("12")
+            if self.animation_system.get_frame_count() > 0:
+                self.animation_system.play()
+                print("Simple animation system initialized and playing")
+            else:
+                print("Failed to load animation frames")
+                self.animation_system = None
+        except Exception as e:
+            print(f"Failed to initialize simple animation system: {e}")
+            self.animation_system = None
+
+        # 初始化射击动画系统
+        try:
+            self.shooting_animation = ShootingAnimation("13")
+            print("Shooting animation system initialized")
+        except Exception as e:
+            print(f"Failed to initialize shooting animation system: {e}")
+            self.shooting_animation = None
+
+        self.facing_direction = 1  # 1 for right, -1 for left
+
+  # 移除了射击状态相关变量
+
         # Visuals
         self.base_color = (173, 216, 230) # Light blue
         self.roll_color = (100, 100, 255) # Blue
 
     def move(self, direction):
+        # 如果正在播放射击动画，不能移动
+        if self.shooting_animation and self.shooting_animation.is_playing():
+            self.velocity.x = 0
+            return
+
         if not self.is_rolling:
             # Apply permanent speed multiplier
             speed_multiplier = self.get_speed_multiplier()
             self.velocity.x = direction * PLAYER_SPEED * speed_multiplier
             if direction != 0:
                 self.roll_direction = direction
+                self.facing_direction = direction  # Update facing direction for animation
+
+    def update_visual_rect(self):
+        """Update visual rectangle position to match collision rectangle."""
+        self.visual_rect.centerx = self.rect.centerx
+        self.visual_rect.bottom = self.rect.bottom
 
     def jump(self):
         if self.on_ground and not self.is_rolling:
@@ -69,12 +113,29 @@ class Player:
     def update_state(self):
         self._update_roll_state()
 
+        # Update animation system
+        if self.animation_system:
+            is_moving = abs(self.velocity.x) > 0.1 and not self.is_rolling
+            if is_moving:
+                # 角色在移动，确保动画播放
+                if not self.animation_system.is_playing:
+                    self.animation_system.play()
+            else:
+                # 角色停止，停止动画播放
+                if self.animation_system.is_playing:
+                    self.animation_system.stop()
+            # 无论是否移动都更新动画，以保持在当前帧
+            self.animation_system.update()
+
+        # Update shooting animation
+        self.update_shooting_animation()
+
     def update_physics(self, platforms):
         # Apply gravity only when not rolling
         if not self.is_rolling:
             self.velocity.y += GRAVITY
             if self.velocity.y > 10: self.velocity.y = 10
-        
+
         # --- Horizontal Collision ---
         self.rect.x += self.velocity.x
         for platform in platforms:
@@ -83,7 +144,7 @@ class Player:
                     self.rect.right = platform.left
                 elif self.velocity.x < 0: # Moving left
                     self.rect.left = platform.right
-        
+
         # --- Vertical Collision ---
         self.rect.y += self.velocity.y
         self.on_ground = False
@@ -97,6 +158,9 @@ class Player:
                     self.rect.top = platform.bottom
                     self.velocity.y = 0
 
+        # Update visual rectangle to match collision rectangle
+        self.update_visual_rect()
+
     def _update_roll_state(self):
         if self.is_rolling:
             if pygame.time.get_ticks() - self.roll_timer > ROLL_DURATION:
@@ -107,6 +171,16 @@ class Player:
             else:
                 # Maintain roll speed but apply some friction/decay
                 self.velocity.x *= 0.95
+
+    def start_ranged_attack(self, direction=1):
+        """开始远程攻击，触发射击动画"""
+        if self.shooting_animation:
+            self.shooting_animation.start_shooting(direction)
+
+    def update_shooting_animation(self):
+        """更新射击动画状态"""
+        if self.shooting_animation:
+            self.shooting_animation.update()
 
     def add_permanent_upgrade(self, upgrade_type, value):
         """Add a permanent upgrade to the player."""
@@ -170,6 +244,7 @@ class Player:
         if attribute_type in self.permanent_upgrades:
             old_value = self.permanent_upgrades[attribute_type]
             self.permanent_upgrades[attribute_type] += value
+            self.scroll_collected += 1  # Also count manual upgrades as scrolls
             
             # Add notification
             display_names = {
@@ -194,45 +269,70 @@ class Player:
             
             print(f"Upgraded {attribute_type} by {value:.2f} (total: {self.permanent_upgrades[attribute_type]:.2f}x)")
     
-    def save_currency(self):
+    def save_currency(self, save_slot=None, weapon_operon=None):
         """Save player currency to file."""
         import json
         save_data = {
             'currency': self.currency,
             'permanent_upgrades': self.permanent_upgrades,
             'upgrade_level': self.upgrade_level,
-            'upgrade_cost': self.upgrade_cost
+            'upgrade_cost': self.upgrade_cost,
+            'position': {
+                'x': self.rect.x,
+                'y': self.rect.y
+            },
+            'scroll_collected': self.scroll_collected
         }
+        
+        # Save weapon data if weapon_operon is provided
+        if weapon_operon:
+            save_data['weapons'] = weapon_operon.get_weapon_data()
+        
+        # Determine filename based on save slot
+        filename = f'save_{save_slot}.json' if save_slot is not None else 'player_save.json'
         try:
-            with open('player_save.json', 'w') as f:
+            with open(filename, 'w') as f:
                 json.dump(save_data, f)
-            print(f"Saved currency: {self.currency}")
+            print(f"Saved player data to {filename}: currency={self.currency}, pos=({self.rect.x}, {self.rect.y})")
         except Exception as e:
             print(f"Failed to save currency: {e}")
     
-    def load_currency(self):
+    def load_currency(self, save_slot=None, weapon_operon=None):
         """Load player currency from file."""
         import json
+        # Determine filename based on save slot
+        filename = f'save_{save_slot}.json' if save_slot is not None else 'player_save.json'
         try:
-            with open('player_save.json', 'r') as f:
+            with open(filename, 'r') as f:
                 save_data = json.load(f)
             self.currency = save_data.get('currency', 0)
             
             # Load upgrade system data
             self.upgrade_level = save_data.get('upgrade_level', 1)
             self.upgrade_cost = save_data.get('upgrade_cost', 500)
+            self.scroll_collected = save_data.get('scroll_collected', 0)
             
             # Load permanent upgrades if available
             if 'permanent_upgrades' in save_data:
                 self.permanent_upgrades.update(save_data['permanent_upgrades'])
             
+            # Load player position if available
+            if 'position' in save_data:
+                pos = save_data['position']
+                self.rect.x = pos.get('x', 100)
+                self.rect.y = pos.get('y', 500)
+            
+            # Load weapon data if available and weapon_operon is provided
+            if 'weapons' in save_data and weapon_operon:
+                weapon_operon.load_weapon_data(save_data['weapons'])
+            
             # Check if upgrade is available after loading
             self.check_upgrade_available()
             
-            print(f"Loaded currency: {self.currency}")
+            print(f"Loaded player data from {filename}: currency={self.currency}, pos=({self.rect.x}, {self.rect.y})")
             return True
         except FileNotFoundError:
-            print("No save file found, starting with default currency")
+            print(f"No save file {filename} found, starting with default values")
             return False
         except Exception as e:
             print(f"Failed to load currency: {e}")
@@ -300,28 +400,54 @@ class Player:
 
     def draw(self, screen, camera_x=0):
         # Adjust player's drawing position based on the camera
-        adjusted_rect = self.rect.copy()
-        adjusted_rect.x -= camera_x
-        
+        adjusted_collision_rect = self.rect.copy()
+        adjusted_collision_rect.x -= camera_x
+        adjusted_visual_rect = self.visual_rect.copy()
+        adjusted_visual_rect.x -= camera_x
+
         if self.is_dead:
             # Death animation: gradually fade and fall
             alpha = 1.0 - self.death_animation_progress
             fall_offset = int(self.death_animation_progress * 20)
-            
+
             # Calculate color with fade effect
             fade_color = tuple(int(c * alpha) for c in self.base_color)
-            
+
             # Draw falling/fading rectangle
-            death_rect = adjusted_rect.copy()
+            death_rect = adjusted_visual_rect.copy()
             death_rect.y += fall_offset
-            
+
             # Create surface with alpha for transparency
             death_surface = pygame.Surface((death_rect.width, death_rect.height), pygame.SRCALPHA)
             death_surface.fill((*fade_color, int(255 * alpha)))
             screen.blit(death_surface, death_rect)
         else:
-            color = self.roll_color if self.is_rolling else self.base_color
-            pygame.draw.rect(screen, color, adjusted_rect)
+            # Use animation if available, otherwise use colored rectangle
+            # 优先显示射击动画
+            if self.shooting_animation and self.shooting_animation.is_playing():
+                frame = self.shooting_animation.get_current_frame(self.facing_direction)
+                if frame:
+                    # Position frame at the center of the visual rect
+                    frame_rect = frame.get_rect()
+                    frame_rect.centerx = adjusted_visual_rect.centerx
+                    frame_rect.centery = adjusted_visual_rect.centery
+                    screen.blit(frame, frame_rect)
+            elif self.animation_system:
+                frame = self.animation_system.get_current_frame(self.facing_direction)
+                if frame:
+                    # Position frame at the center of the visual rect for better visibility
+                    frame_rect = frame.get_rect()
+                    frame_rect.centerx = adjusted_visual_rect.centerx
+                    frame_rect.centery = adjusted_visual_rect.centery  # 居中显示
+                    screen.blit(frame, frame_rect)
+                else:
+                    # Fallback to colored rectangle using visual rect
+                    color = self.roll_color if self.is_rolling else self.base_color
+                    pygame.draw.rect(screen, color, adjusted_visual_rect)
+            else:
+                # Fallback to colored rectangle using collision rect
+                color = self.roll_color if self.is_rolling else self.base_color
+                pygame.draw.rect(screen, color, adjusted_collision_rect)
 
 class MovementOperon:
     """Manages player movement, now including rolling and map collision."""

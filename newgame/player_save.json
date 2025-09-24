@@ -1,1 +1,1 @@
-{"currency": 200, "permanent_upgrades": {"speed": 1.0, "damage": 1.0, "jump": 1.1}, "upgrade_level": 1, "upgrade_cost": 500}
+{"currency": 0, "permanent_upgrades": {"speed": 1.0, "damage": 1.0, "jump": 1.0}, "upgrade_level": 1, "upgrade_cost": 500, "position": {"x": 100, "y": 576}, "scroll_collected": 0}
